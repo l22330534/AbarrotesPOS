@@ -1,0 +1,290 @@
+﻿@page "/productos"
+@using AbarrotesPOS.Data
+@using AbarrotesPOS.Shared
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Productos</PageTitle>
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1>Administración de Productos</h1>
+        <button class="btn btn-primary" @onclick="AbrirModalParaCrear">
+            <i class="bi bi-plus-circle-fill"></i> Nuevo Producto
+        </button>
+    </div>
+
+    <!-- 1. ALERTA INTELIGENTE: Solo se ve si hay stock bajo -->
+    @if (conteoBajoStock > 0)
+    {
+        <div class="alert alert-warning d-flex align-items-center shadow-sm">
+            <i class="bi bi-exclamation-triangle-fill fs-3 me-3 text-danger"></i>
+            <div>
+                <strong>¡Alerta de Inventario!</strong> Tienes <strong>@conteoBajoStock</strong> productos con stock crítico.
+                @if (!mostrarSoloBajos)
+                {
+                    <button class="btn btn-link p-0 ms-2 fw-bold" @onclick="FiltrarCriticos">Ver solo urgentes</button>
+                }
+                else
+                {
+                    <button class="btn btn-link p-0 ms-2" @onclick="CargarDatos">Ver todos</button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (listaProductos == null)
+    {
+        <p><em>Cargando productos...</em></p>
+    }
+    else
+    {
+        <table class="table table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Nombre</th>
+                    <th>Categoría</th>
+                    <th>Proveedor</th>
+                    <th>Precio Venta</th>
+                    <th>Stock</th>
+                    <th>Mínimo</th> <!-- Columna nueva -->
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var producto in listaProductos)
+                {
+                    // 2. LÓGICA VISUAL: Rojo si está bajo el mínimo
+                    bool esCritico = producto.Stock <= producto.StockMinimo;
+
+                    <tr class="@(esCritico ? "table-danger" : "")">
+                        <td>
+                            <span class="fw-bold">@producto.Nombre</span>
+                            @if (esCritico)
+                            {
+                                <span class="badge bg-danger ms-2">¡Bajo!</span>
+                            }
+                        </td>
+                        <td>@producto.Categoria?.Nombre</td>
+                        <td>@producto.Proveedor?.Nombre</td>
+                        <td>@producto.PrecioVenta.ToString("C")</td>
+
+                        <!-- Resaltamos el número de stock -->
+                        <td class="@(esCritico ? "fw-bold text-danger" : "fw-bold")">
+                            @producto.Stock
+                        </td>
+
+                        <td class="text-muted small">@producto.StockMinimo</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" @onclick="() => AbrirModalParaEditar(producto)">
+                                <i class="bi bi-pencil-fill"></i> Editar
+                            </button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => EliminarProducto(producto)">
+                                <i class="bi bi-trash3-fill"></i> Eliminar
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<!-- Modal para Crear/Editar Producto -->
+@if (mostrarModal)
+{
+    <div class="modal fade show" tabindex="-1" style="display: block; background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(productoActual.Id == 0 ? "Nuevo Producto" : "Editar Producto")</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="productoActual" OnValidSubmit="GuardarProducto">
+                        <DataAnnotationsValidator />
+
+                        <!-- Fila 1: Nombre y Código -->
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label">Nombre del Producto</label>
+                                <InputText class="form-control" @bind-Value="productoActual.Nombre" />
+                                <ValidationMessage For="() => productoActual.Nombre" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Código de Barras</label>
+                                <InputText class="form-control" @bind-Value="productoActual.CodigoBarras" />
+                            </div>
+                        </div>
+
+                        <!-- Fila 2: Precios y Stock -->
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Precio de Venta</label>
+                                <InputNumber class="form-control" @bind-Value="productoActual.PrecioVenta" />
+                                <ValidationMessage For="() => productoActual.PrecioVenta" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Stock Actual</label>
+                                <InputNumber class="form-control" @bind-Value="productoActual.Stock" />
+                                <ValidationMessage For="() => productoActual.Stock" />
+                            </div>
+                            <!-- 3. CAMPO NUEVO EN MODAL -->
+                            <div class="col-md-4">
+                                <label class="form-label text-danger fw-bold">Stock Mínimo</label>
+                                <InputNumber class="form-control border-danger" @bind-Value="productoActual.StockMinimo" />
+                                <small class="text-muted">Alerta al bajar de esto.</small>
+                            </div>
+                        </div>
+
+                        <!-- Fila 3: Relaciones -->
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Categoría</label>
+                                <InputSelect class="form-select" @bind-Value="productoActual.CategoriaId">
+                                    <option value="0">Seleccione...</option>
+                                    @if (listaCategorias != null)
+                                    {
+                                        foreach (var c in listaCategorias)
+                                        {
+                                            <option value="@c.Id">@c.Nombre</option>
+                                        }
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="() => productoActual.CategoriaId" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Proveedor</label>
+                                <InputSelect class="form-select" @bind-Value="productoActual.ProveedorId">
+                                    <option value="0">Seleccione...</option>
+                                    @if (listaProveedores != null)
+                                    {
+                                        foreach (var p in listaProveedores)
+                                        {
+                                            <option value="@p.Id">@p.Nombre</option>
+                                        }
+                                    }
+                                </InputSelect>
+                                <ValidationMessage For="() => productoActual.ProveedorId" />
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Guardar</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Producto>? listaProductos;
+    private List<Categoria>? listaCategorias;
+    private List<Proveedor>? listaProveedores;
+
+    private Producto productoActual = new();
+    private bool mostrarModal = false;
+
+    // Variables para la lógica inteligente
+    private int conteoBajoStock = 0;
+    private bool mostrarSoloBajos = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarCatalogos();
+        await CargarDatos();
+    }
+
+    private async Task CargarCatalogos()
+    {
+        listaCategorias = await DbContext.Categorias.OrderBy(c => c.Nombre).ToListAsync();
+        listaProveedores = await DbContext.Proveedores.OrderBy(p => p.Nombre).ToListAsync();
+    }
+
+    private async Task CargarDatos()
+    {
+        mostrarSoloBajos = false;
+        listaProductos = await DbContext.Productos
+            .Include(p => p.Categoria)
+            .Include(p => p.Proveedor)
+            .OrderBy(p => p.Nombre)
+            .ToListAsync();
+
+        // Calcular alertas
+        conteoBajoStock = listaProductos.Count(p => p.Stock <= p.StockMinimo);
+    }
+
+    private void FiltrarCriticos()
+    {
+        if (listaProductos == null) return;
+        listaProductos = listaProductos.Where(p => p.Stock <= p.StockMinimo).ToList();
+        mostrarSoloBajos = true;
+    }
+
+    private void AbrirModalParaCrear()
+    {
+        productoActual = new Producto { StockMinimo = 5 }; // Valor sugerido
+        mostrarModal = true;
+    }
+
+    private void AbrirModalParaEditar(Producto producto)
+    {
+        // Clonamos incluyendo el StockMinimo
+        productoActual = new Producto
+        {
+            Id = producto.Id,
+            Nombre = producto.Nombre,
+            CodigoBarras = producto.CodigoBarras,
+            PrecioVenta = producto.PrecioVenta,
+            Stock = producto.Stock,
+            StockMinimo = producto.StockMinimo, // <--- Importante copiar esto
+            CategoriaId = producto.CategoriaId,
+            ProveedorId = producto.ProveedorId
+        };
+        mostrarModal = true;
+    }
+
+    private void CerrarModal()
+    {
+        mostrarModal = false;
+    }
+
+    private async Task GuardarProducto()
+    {
+        if (productoActual.CategoriaId == 0 || productoActual.ProveedorId == 0) return;
+
+        if (productoActual.Id == 0)
+        {
+            DbContext.Productos.Add(productoActual);
+        }
+        else
+        {
+            var db = await DbContext.Productos.FindAsync(productoActual.Id);
+            if (db != null)
+            {
+                db.Nombre = productoActual.Nombre;
+                db.CodigoBarras = productoActual.CodigoBarras;
+                db.PrecioVenta = productoActual.PrecioVenta;
+                db.Stock = productoActual.Stock;
+                db.StockMinimo = productoActual.StockMinimo; // Actualizamos
+                db.CategoriaId = productoActual.CategoriaId;
+                db.ProveedorId = productoActual.ProveedorId;
+            }
+        }
+
+        await DbContext.SaveChangesAsync();
+        await CargarDatos();
+        CerrarModal();
+    }
+
+    private async Task EliminarProducto(Producto producto)
+    {
+        DbContext.Productos.Remove(producto);
+        await DbContext.SaveChangesAsync();
+        await CargarDatos();
+    }
+}

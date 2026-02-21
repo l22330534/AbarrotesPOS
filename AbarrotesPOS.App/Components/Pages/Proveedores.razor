@@ -1,0 +1,181 @@
+﻿@page "/proveedores"
+@using AbarrotesPOS.Data
+@using AbarrotesPOS.Shared
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Proveedores</PageTitle>
+
+<h1>Administración de Proveedores</h1>
+<p>Gestiona los proveedores que surten productos a la tienda.</p>
+
+<button class="btn btn-primary mb-3" @onclick="AbrirModalParaCrear">
+    <i class="bi bi-plus-circle-fill"></i> Nuevo Proveedor
+</button>
+
+@if (listaProveedores == null)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Cargando...</span>
+    </div>
+}
+else
+{
+    <table class="table table-striped table-hover shadow-sm">
+        <thead class="table-dark">
+            <tr>
+                <th>RFC</th>
+                <th>Nombre</th>
+                <th>Contacto</th>
+                <th>Teléfono</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var proveedor in listaProveedores)
+            {
+                <tr>
+                    <td><span class="badge bg-secondary">@proveedor.Rfc</span></td>
+                    <td>@proveedor.Nombre</td>
+                    <td>@proveedor.Contacto</td>
+                    <td>@proveedor.Telefono</td>
+                    <td>
+                        <button class="btn btn-sm btn-warning me-2" @onclick="() => AbrirModalParaEditar(proveedor)">
+                            <i class="bi bi-pencil-fill"></i> Editar
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => EliminarProveedor(proveedor)">
+                            <i class="bi bi-trash3-fill"></i> Eliminar
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (mostrarModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(proveedorActual.Id == 0 ? "Nuevo Proveedor" : "Editar Proveedor")</h5>
+                    <button type="button" class="btn-close" @onclick="CerrarModal"></button>
+                </div>
+
+                <EditForm Model="proveedorActual" OnValidSubmit="GuardarProveedor">
+                    <DataAnnotationsValidator />
+
+                    <div class="modal-body">
+                        <ValidationSummary class="text-danger mb-3" />
+
+                        <div class="mb-3">
+                            <label class="form-label">RFC</label>
+                            <InputText class="form-control" @bind-Value="proveedorActual.Rfc" placeholder="Ej: AAAA000000XXX" />
+                            <ValidationMessage For="() => proveedorActual.Rfc" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Nombre del Proveedor *</label>
+                            <InputText class="form-control" @bind-Value="proveedorActual.Nombre" />
+                            <ValidationMessage For="() => proveedorActual.Nombre" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Persona de Contacto</label>
+                            <InputText class="form-control" @bind-Value="proveedorActual.Contacto" />
+                            <ValidationMessage For="() => proveedorActual.Contacto" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Teléfono</label>
+                            <InputText class="form-control" @bind-Value="proveedorActual.Telefono" />
+                            <ValidationMessage For="() => proveedorActual.Telefono" />
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Proveedor>? listaProveedores;
+    private Proveedor proveedorActual = new();
+    private bool mostrarModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarProveedores();
+    }
+
+    private async Task CargarProveedores()
+    {
+        listaProveedores = await DbContext.Proveedores.OrderBy(p => p.Nombre).ToListAsync();
+    }
+
+    private void AbrirModalParaCrear()
+    {
+        proveedorActual = new Proveedor();
+        mostrarModal = true;
+    }
+
+    private void AbrirModalParaEditar(Proveedor proveedor)
+    {
+        proveedorActual = new Proveedor
+        {
+            Id = proveedor.Id,
+            Rfc = proveedor.Rfc, // <--- IMPORTANTE: Cargar el RFC al editar
+            Nombre = proveedor.Nombre,
+            Contacto = proveedor.Contacto,
+            Telefono = proveedor.Telefono
+        };
+        mostrarModal = true;
+    }
+
+    private void CerrarModal()
+    {
+        mostrarModal = false;
+    }
+
+    private async Task GuardarProveedor()
+    {
+        try
+        {
+            if (proveedorActual.Id == 0)
+            {
+                DbContext.Proveedores.Add(proveedorActual);
+            }
+            else
+            {
+                var proveedorEnDb = await DbContext.Proveedores.FindAsync(proveedorActual.Id);
+                if (proveedorEnDb != null)
+                {
+                    proveedorEnDb.Rfc = proveedorActual.Rfc; // <--- Actualizar en BD
+                    proveedorEnDb.Nombre = proveedorActual.Nombre;
+                    proveedorEnDb.Contacto = proveedorActual.Contacto;
+                    proveedorEnDb.Telefono = proveedorActual.Telefono;
+                }
+            }
+
+            await DbContext.SaveChangesAsync();
+            await CargarProveedores();
+            CerrarModal();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
+        }
+    }
+
+    private async Task EliminarProveedor(Proveedor proveedor)
+    {
+        DbContext.Proveedores.Remove(proveedor);
+        await DbContext.SaveChangesAsync();
+        await CargarProveedores();
+    }
+}

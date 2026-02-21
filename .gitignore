@@ -1,0 +1,14 @@
+# Ignorar carpetas del sistema y herramientas
+.vscode/
+.idea/
+.vs/
+.git/
+.dotnet/
+.VirtualBox/
+.claude/
+
+# Ignorar archivos de compilación (siempre se regeneran)
+bin/
+obj/
+*.user
+*.suo

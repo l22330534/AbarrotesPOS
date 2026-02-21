@@ -1,0 +1,259 @@
+﻿@page "/puntodeventa"
+@using AbarrotesPOS.Data
+@using AbarrotesPOS.Shared
+@using AbarrotesPOS.Services
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject UserSessionService UserSession
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Punto de Venta</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <!-- Panel Izquierdo: Buscador de Productos -->
+        <div class="col-md-7">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-search"></i> Catálogo</h5>
+                </div>
+                <div class="card-body">
+                    <div class="input-group mb-3">
+                        <span class="input-group-text"><i class="bi bi-upc-scan"></i></span>
+                        <input type="text" class="form-control" placeholder="Buscar producto..."
+                               @bind="terminoBusqueda" @bind:event="oninput" @onkeyup="BuscarProductos" />
+                    </div>
+                    <div class="table-responsive" style="height: 500px; overflow-y: auto;">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light sticky-top"><tr><th>Producto</th><th>Precio</th><th>Stock</th><th></th></tr></thead>
+                            <tbody>
+                                @if (productosEncontrados != null)
+                                {
+                                    @foreach (var prod in productosEncontrados)
+                                    {
+                                        <tr class="@(prod.Stock <= prod.StockMinimo ? "table-danger" : "")">
+                                            <td>
+                                                <div class="fw-bold">@prod.Nombre</div>
+                                                <small class="text-muted">@prod.CodigoBarras</small>
+                                            </td>
+                                            <td class="text-primary fw-bold">@prod.PrecioVenta.ToString("C")</td>
+                                            <td>
+                                                <span class="badge @(prod.Stock > prod.StockMinimo ? "bg-success" : "bg-danger")">
+                                                    @prod.Stock
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary" disabled="@(prod.Stock <= 0)" @onclick="() => AgregarAlCarrito(prod)">Agregar</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel Derecho: Carrito y Cliente -->
+        <div class="col-md-5">
+            <div class="card shadow h-100 border-0">
+                <div class="card-header bg-dark text-white d-flex justify-content-between">
+                    <h5 class="mb-0">Ticket de Venta</h5>
+                    <button class="btn btn-sm btn-danger" @onclick="LimpiarCarrito">Limpiar</button>
+                </div>
+                <div class="card-body d-flex flex-column">
+
+                    <!-- SELECCIÓN DE CLIENTE (FIDELIDAD) -->
+                    <div class="mb-3 p-3 bg-light rounded border border-warning">
+                        <label class="small text-muted fw-bold mb-1"><i class="bi bi-star-fill text-warning"></i> PROGRAMA DE FIDELIDAD</label>
+                        <div class="input-group">
+                            <select class="form-select" @bind="clienteSeleccionadoId">
+                                <option value="">-- Cliente Casual (Sin puntos) --</option>
+                                @if (listaClientes != null)
+                                {
+                                    foreach (var c in listaClientes)
+                                    {
+                                        <option value="@c.Id">@c.Nombre (Tiene: @c.Puntos pts)</option>
+                                    }
+                                }
+                            </select>
+                            <a href="clientes" class="btn btn-outline-secondary" title="Nuevo Cliente"><i class="bi bi-person-plus"></i></a>
+                        </div>
+                        @if (puntosGanados > 0 && clienteSeleccionadoId != null)
+                        {
+                            <div class="mt-2 text-success small fw-bold text-center animate__animated animate__pulse infinite">
+                                <i class="bi bi-gift-fill"></i> ¡Esta compra generará @puntosGanados puntos!
+                            </div>
+                        }
+                    </div>
+
+                    <!-- LISTA DEL CARRITO -->
+                    <div class="flex-grow-1 overflow-auto mb-3 border-top border-bottom py-2" style="max-height: 350px;">
+                        @if (!carrito.Any())
+                        {
+                            <div class="text-center text-muted mt-5">Carrito vacío</div>
+                        }
+                        else
+                        {
+                            <ul class="list-group list-group-flush">
+                                @foreach (var item in carrito)
+                                {
+                                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                        <div class="me-2" style="flex:1">
+                                            <div class="fw-bold">@item.Producto.Nombre</div>
+                                            <small>@item.PrecioVenta.ToString("C") x </small>
+                                            <div class="btn-group btn-group-sm ms-2">
+                                                <button class="btn btn-outline-secondary py-0" @onclick="() => CambiarCantidad(item, -1)">-</button>
+                                                <span class="btn btn-light border py-0 disabled text-dark" style="width:35px">@item.Cantidad</span>
+                                                <button class="btn btn-outline-secondary py-0" @onclick="() => CambiarCantidad(item, 1)">+</button>
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <div class="fw-bold">@((item.Cantidad * item.PrecioVenta).ToString("C"))</div>
+                                            <button class="btn btn-link text-danger p-0 small text-decoration-none" @onclick="() => RemoverItem(item)">Quitar</button>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+
+                    <!-- TOTALES Y COBRO -->
+                    <div class="mt-auto">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="h4 m-0">Total:</span>
+                            <span class="h2 fw-bold text-success m-0">@Total.ToString("C")</span>
+                        </div>
+                        <button class="btn btn-success btn-lg w-100 py-3 fw-bold shadow" disabled="@(!carrito.Any())" @onclick="ProcesarVenta">
+                            <i class="bi bi-cash-coin me-2"></i> COBRAR
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    // --- ESTADO ---
+    string terminoBusqueda = "";
+    List<Producto> productosEncontrados = new();
+    List<VentaDetalle> carrito = new();
+    List<Cliente>? listaClientes;
+    int? clienteSeleccionadoId = null;
+
+    decimal Total => carrito.Sum(x => x.Cantidad * x.PrecioVenta);
+
+    // Regla de Negocio: 1 punto por cada $10 pesos comprados
+    int puntosGanados => (int)(Total / 10);
+
+    protected override async Task OnInitializedAsync()
+    {
+        listaClientes = await DbContext.Clientes.OrderBy(c => c.Nombre).ToListAsync();
+    }
+
+    async Task BuscarProductos()
+    {
+        if (string.IsNullOrWhiteSpace(terminoBusqueda)) { productosEncontrados.Clear(); return; }
+        productosEncontrados = await DbContext.Productos
+            .Where(p => p.Nombre.Contains(terminoBusqueda) || p.CodigoBarras.Contains(terminoBusqueda))
+            .Take(10).ToListAsync();
+    }
+
+    void AgregarAlCarrito(Producto prod)
+    {
+        var item = carrito.FirstOrDefault(x => x.ProductoId == prod.Id);
+        if (item != null)
+        {
+            if (item.Cantidad + 1 <= prod.Stock) item.Cantidad++;
+        }
+        else
+        {
+            carrito.Add(new VentaDetalle
+            {
+                ProductoId = prod.Id,
+                Producto = prod,
+                PrecioVenta = prod.PrecioVenta,
+                Cantidad = 1
+            });
+        }
+    }
+
+    void CambiarCantidad(VentaDetalle item, int cambio)
+    {
+        if (cambio > 0 && item.Cantidad + cambio <= item.Producto.Stock) item.Cantidad += cambio;
+        else if (cambio < 0) { if (item.Cantidad + cambio > 0) item.Cantidad += cambio; else RemoverItem(item); }
+    }
+
+    void RemoverItem(VentaDetalle item) => carrito.Remove(item);
+
+    void LimpiarCarrito()
+    {
+        carrito.Clear();
+        terminoBusqueda = "";
+        productosEncontrados.Clear();
+        clienteSeleccionadoId = null;
+    }
+
+    async Task ProcesarVenta()
+    {
+        if (!carrito.Any()) return;
+
+        // Usamos una transacción para asegurar que Puntos, Venta y Stock se guarden juntos o fallen juntos
+        using var transaction = await DbContext.Database.BeginTransactionAsync();
+        try
+        {
+            // 1. Guardar la Venta
+            var nuevaVenta = new Venta
+            {
+                FechaVenta = DateTime.Now,
+                Total = this.Total,
+                UsuarioId = UserSession.UsuarioActual?.Id ?? 1,
+                // Convertir el int? a int si tiene valor, si no null
+                ClienteId = (clienteSeleccionadoId.HasValue && clienteSeleccionadoId > 0) ? clienteSeleccionadoId : null
+            };
+
+            DbContext.Ventas.Add(nuevaVenta);
+            await DbContext.SaveChangesAsync();
+
+            // 2. Guardar Detalles y Descontar Stock
+            foreach (var item in carrito)
+            {
+                item.VentaId = nuevaVenta.Id;
+                item.Producto = null; // Limpiar referencia circular
+                DbContext.VentaDetalles.Add(item);
+
+                var prodDb = await DbContext.Productos.FindAsync(item.ProductoId);
+                if (prodDb != null) prodDb.Stock -= item.Cantidad;
+            }
+
+            // 3. FIDELIDAD: Sumar puntos al cliente
+            if (clienteSeleccionadoId.HasValue && clienteSeleccionadoId > 0)
+            {
+                var clienteDb = await DbContext.Clientes.FindAsync(clienteSeleccionadoId.Value);
+                if (clienteDb != null)
+                {
+                    clienteDb.Puntos += this.puntosGanados;
+                }
+            }
+
+            await DbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            int puntosGenerados = puntosGanados; // Guardar para el mensaje antes de limpiar
+            LimpiarCarrito();
+
+            string msg = "¡Venta exitosa!";
+            if (puntosGenerados > 0) msg += $" Cliente ganó {puntosGenerados} puntos.";
+
+            await JS.InvokeVoidAsync("alert", msg);
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            await JS.InvokeVoidAsync("alert", "Error al procesar: " + ex.Message);
+        }
+    }
+}

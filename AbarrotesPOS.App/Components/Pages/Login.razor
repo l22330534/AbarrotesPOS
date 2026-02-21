@@ -1,0 +1,105 @@
+﻿@page "/"
+@using AbarrotesPOS.Data
+@using AbarrotesPOS.Shared
+@using AbarrotesPOS.Services
+@using Microsoft.EntityFrameworkCore
+@using System.ComponentModel.DataAnnotations
+@* ^^^ 1. ESTA LÍNEA SOLUCIONA EL ERROR DE 'Required' ^^^ *@
+
+@using AbarrotesPOS.App.Components.Layout
+@* ^^^ 2. ESTA LÍNEA SOLUCIONA EL ERROR DE 'LoginLayout' (Asegúrate de haber movido el archivo ahí) ^^^ *@
+
+@layout LoginLayout
+@inject AppDbContext DbContext
+@inject NavigationManager NavManager
+@inject UserSessionService UserSession
+@rendermode InteractiveServer
+
+<PageTitle>Iniciar Sesión</PageTitle>
+
+<div class="card shadow border-0 rounded-3">
+    <div class="card-header bg-primary text-white text-center py-4">
+        <h3 class="mb-0 fw-bold">AbarrotesPOS</h3>
+        <p class="mb-0 opacity-75">Acceso al Sistema</p>
+    </div>
+    <div class="card-body p-4">
+        @if (!string.IsNullOrEmpty(mensajeError))
+        {
+            <div class="alert alert-danger small">@mensajeError</div>
+        }
+
+        <EditForm Model="loginModel" OnValidSubmit="IniciarSesion">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label class="form-label small text-muted fw-bold">USUARIO</label>
+                <InputText @bind-Value="loginModel.Usuario" class="form-control" placeholder="Usuario" />
+                <ValidationMessage For="() => loginModel.Usuario" />
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label small text-muted fw-bold">CONTRASEÑA</label>
+                <InputText type="password" @bind-Value="loginModel.Password" class="form-control" placeholder="Contraseña" />
+                <ValidationMessage For="() => loginModel.Password" />
+            </div>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary" disabled="@procesando">
+                    @(procesando ? "Verificando..." : "Ingresar")
+                </button>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private LoginDTO loginModel = new();
+    private string? mensajeError;
+    private bool procesando = false;
+
+    private async Task IniciarSesion()
+    {
+        procesando = true;
+        mensajeError = null;
+        await Task.Delay(300);
+
+        try
+        {
+            var usuarioEncontrado = await DbContext.Usuarios
+                .Include(u => u.Rol)
+                .FirstOrDefaultAsync(u => u.NombreUsuario == loginModel.Usuario);
+
+            if (usuarioEncontrado == null || !usuarioEncontrado.Activo)
+            {
+                mensajeError = "Credenciales inválidas o usuario inactivo.";
+                procesando = false;
+                return;
+            }
+
+            if (usuarioEncontrado.PasswordHash != loginModel.Password)
+            {
+                mensajeError = "Credenciales inválidas.";
+                procesando = false;
+                return;
+            }
+
+            UserSession.IniciarSesion(usuarioEncontrado);
+            NavManager.NavigateTo("/inicio");
+        }
+        catch (Exception ex)
+        {
+            mensajeError = "Error de conexión.";
+            Console.WriteLine(ex.Message);
+            procesando = false;
+        }
+    }
+
+    public class LoginDTO
+    {
+        [Required(ErrorMessage = "El usuario es requerido")]
+        public string Usuario { get; set; } = "";
+
+        [Required(ErrorMessage = "La contraseña es requerida")]
+        public string Password { get; set; } = "";
+    }
+}

@@ -1,0 +1,376 @@
+﻿@page "/usuarios"
+@using AbarrotesPOS.Data
+@using AbarrotesPOS.Shared
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext DbContext
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Administración de Acceso</PageTitle>
+
+<div class="container">
+    <!-- Mensaje de Error en pantalla -->
+    @if (!string.IsNullOrEmpty(errorMsg))
+    {
+        <div class="alert alert-danger">
+            <strong>Error:</strong> @errorMsg
+        </div>
+    }
+
+    <h1 class="mb-4">Administración de Acceso</h1>
+
+    <!-- Pestañas -->
+    <ul class="nav nav-tabs mb-4">
+        <li class="nav-item">
+            <a class="nav-link @(pestanaActiva == "usuarios" ? "active" : "")"
+               style="cursor: pointer;"
+               @onclick='() => pestanaActiva = "usuarios"'>Usuarios</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link @(pestanaActiva == "roles" ? "active" : "")"
+               style="cursor: pointer;"
+               @onclick='() => pestanaActiva = "roles"'>Roles</a>
+        </li>
+    </ul>
+
+    <!-- Pestaña USUARIOS -->
+    @if (pestanaActiva == "usuarios")
+    {
+        <div class="d-flex justify-content-between mb-3">
+            <h4>Usuarios</h4>
+            <button class="btn btn-primary" @onclick="AbrirModalUsuarioCrear">
+                <i class="bi bi-plus-lg"></i> Nuevo Usuario
+            </button>
+        </div>
+
+        @if (listaUsuarios == null)
+        {
+            <div class="spinner-border text-primary"></div>
+        }
+        else
+        {
+            <table class="table table-striped align-middle shadow-sm">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in listaUsuarios)
+                    {
+                        <tr>
+                            <td>@u.NombreUsuario</td>
+                            <td>@u.NombreCompleto</td>
+                            <td><span class="badge bg-info text-dark">@(u.Rol?.Nombre ?? "Sin Rol")</span></td>
+                            <td>
+                                @if (u.Activo)
+                                {
+                                    <span class="badge bg-success">Activo</span>
+                                }
+                                else
+                                {
+
+                                    <span class="badge bg-secondary">Inactivo</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-warning me-1" @onclick="() => AbrirModalUsuarioEditar(u)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => EliminarUsuario(u)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+
+    <!-- Pestaña ROLES -->
+    @if (pestanaActiva == "roles")
+    {
+        <div class="d-flex justify-content-between mb-3">
+            <h4>Roles</h4>
+            <button class="btn btn-primary" @onclick="AbrirModalRolCrear">
+                <i class="bi bi-plus-lg"></i> Nuevo Rol
+            </button>
+        </div>
+
+        @if (listaRoles == null)
+        {
+            <div class="spinner-border text-primary"></div>
+        }
+        else
+        {
+            <table class="table table-striped shadow-sm">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in listaRoles)
+                    {
+                        <tr>
+                            <td>@r.Id</td>
+                            <td>@r.Nombre</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-warning me-1" @onclick="() => AbrirModalRolEditar(r)">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => EliminarRol(r)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+</div>
+
+<!-- MODAL USUARIO -->
+@if (mostrarModalUsuario)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(usuarioActual.Id == 0 ? "Nuevo Usuario" : "Editar Usuario")</h5>
+                    <button class="btn-close" @onclick="() => mostrarModalUsuario = false"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="usuarioActual" OnValidSubmit="GuardarUsuario">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label class="form-label">Usuario (Login)</label>
+                            <InputText class="form-control" @bind-Value="usuarioActual.NombreUsuario" />
+                            <ValidationMessage For="() => usuarioActual.NombreUsuario" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Nombre Completo</label>
+                            <InputText class="form-control" @bind-Value="usuarioActual.NombreCompleto" />
+                            <ValidationMessage For="() => usuarioActual.NombreCompleto" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Correo</label>
+                            <InputText class="form-control" @bind-Value="usuarioActual.Correo" />
+                            <ValidationMessage For="() => usuarioActual.Correo" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Contraseña @(usuarioActual.Id > 0 ? "(Dejar vacío para mantener)" : "")</label>
+                            <InputText type="password" class="form-control" @bind-Value="usuarioActual.PasswordHash" />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Rol</label>
+                            <InputSelect class="form-select" @bind-Value="usuarioActual.RolId">
+                                <option value="0">-- Seleccione --</option>
+                                @if (listaRoles != null)
+                                {
+                                    foreach (var r in listaRoles)
+                                    {
+                                        <option value="@r.Id">@r.Nombre</option>
+                                    }
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="() => usuarioActual.RolId" />
+                        </div>
+                        <div class="mb-3 form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="usuarioActual.Activo" id="chkActivo" />
+                            <label class="form-check-label" for="chkActivo">Usuario Activo</label>
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" @onclick="() => mostrarModalUsuario = false">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Guardar</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL ROL -->
+@if (mostrarModalRol)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@(rolActual.Id == 0 ? "Nuevo Rol" : "Editar Rol")</h5>
+                    <button class="btn-close" @onclick="() => mostrarModalRol = false"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="rolActual" OnValidSubmit="GuardarRol">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label class="form-label">Nombre del Rol</label>
+                            <InputText class="form-control" @bind-Value="rolActual.Nombre" />
+                            <ValidationMessage For="() => rolActual.Nombre" />
+                        </div>
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary me-2" @onclick="() => mostrarModalRol = false">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Guardar</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // --- ESTADO ---
+    string pestanaActiva = "usuarios";
+    string errorMsg = "";
+
+    List<Usuario>? listaUsuarios;
+    List<Rol>? listaRoles;
+
+    Usuario usuarioActual = new();
+    Rol rolActual = new();
+
+    bool mostrarModalUsuario = false;
+    bool mostrarModalRol = false;
+
+    // --- CARGA INICIAL ---
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await CargarDatos();
+        }
+        catch (Exception ex)
+        {
+            errorMsg = "Error al cargar datos: " + ex.Message;
+        }
+    }
+
+    async Task CargarDatos()
+    {
+        listaRoles = await DbContext.Roles.OrderBy(r => r.Nombre).ToListAsync();
+        listaUsuarios = await DbContext.Usuarios.Include(u => u.Rol).ToListAsync();
+    }
+
+    // --- LÓGICA USUARIOS ---
+    void AbrirModalUsuarioCrear()
+    {
+        usuarioActual = new() { Activo = true };
+        mostrarModalUsuario = true;
+    }
+
+    void AbrirModalUsuarioEditar(Usuario u)
+    {
+        usuarioActual = new()
+        {
+            Id = u.Id,
+            NombreUsuario = u.NombreUsuario,
+            NombreCompleto = u.NombreCompleto,
+            Correo = u.Correo,
+            RolId = u.RolId,
+            Activo = u.Activo,
+            PasswordHash = null // Limpiamos para no mostrar el hash actual
+        };
+        mostrarModalUsuario = true;
+    }
+
+    async Task GuardarUsuario()
+    {
+        try
+        {
+            if (usuarioActual.RolId == 0)
+            {
+                errorMsg = "Debe seleccionar un Rol.";
+                return;
+            }
+
+            if (usuarioActual.Id == 0)
+            {
+                // Nuevo
+                if (string.IsNullOrEmpty(usuarioActual.PasswordHash))
+                {
+                    errorMsg = "La contraseña es obligatoria para nuevos usuarios.";
+                    return;
+                }
+                DbContext.Usuarios.Add(usuarioActual);
+            }
+            else
+            {
+                // Editar
+                var db = await DbContext.Usuarios.FindAsync(usuarioActual.Id);
+                if (db != null)
+                {
+                    db.NombreUsuario = usuarioActual.NombreUsuario;
+                    db.NombreCompleto = usuarioActual.NombreCompleto;
+                    db.Correo = usuarioActual.Correo;
+                    db.RolId = usuarioActual.RolId;
+                    db.Activo = usuarioActual.Activo;
+
+                    // Solo actualizamos pass si escribió algo nuevo
+                    if (!string.IsNullOrEmpty(usuarioActual.PasswordHash))
+                        db.PasswordHash = usuarioActual.PasswordHash;
+                }
+            }
+            await DbContext.SaveChangesAsync();
+            await CargarDatos();
+            mostrarModalUsuario = false;
+            errorMsg = "";
+        }
+        catch (Exception ex) { errorMsg = "Error al guardar: " + ex.Message; }
+    }
+
+    async Task EliminarUsuario(Usuario u)
+    {
+        try
+        {
+            DbContext.Usuarios.Remove(u);
+            await DbContext.SaveChangesAsync();
+            await CargarDatos();
+        }
+        catch { errorMsg = "No se puede eliminar este usuario."; }
+    }
+
+    // --- LÓGICA ROLES ---
+    void AbrirModalRolCrear() { rolActual = new(); mostrarModalRol = true; }
+    void AbrirModalRolEditar(Rol r) { rolActual = new() { Id = r.Id, Nombre = r.Nombre }; mostrarModalRol = true; }
+
+    async Task GuardarRol()
+    {
+        try
+        {
+            if (rolActual.Id == 0) DbContext.Roles.Add(rolActual);
+            else
+            {
+                var db = await DbContext.Roles.FindAsync(rolActual.Id);
+                if (db != null) db.Nombre = rolActual.Nombre;
+            }
+            await DbContext.SaveChangesAsync();
+            await CargarDatos();
+            mostrarModalRol = false;
+        }
+        catch (Exception ex) { errorMsg = "Error al guardar rol: " + ex.Message; }
+    }
+
+    async Task EliminarRol(Rol r)
+    {
+        try
+        {
+            DbContext.Roles.Remove(r);
+            await DbContext.SaveChangesAsync();
+            await CargarDatos();
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("alert", "No se puede eliminar este rol porque hay usuarios asignados a él.");
+        }
+    }
+}

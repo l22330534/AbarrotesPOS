@@ -1,0 +1,90 @@
+﻿@using AbarrotesPOS.Services
+@inject UserSessionService UserSession
+@implements IDisposable
+@rendermode InteractiveServer
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="inicio">AbarrotesPOS</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+
+        <!-- DIAGNÓSTICO (Opcional, puedes borrarlo luego) -->
+        <div class="px-3 py-2 text-white-50 small" style="font-size: 10px;">
+            Rol: @(UserSession.UsuarioActual?.Rol?.Nombre ?? "Ninguno") <br />
+            Admin: @(UserSession.EsAdmin ? "SÍ" : "NO")
+        </div>
+
+        <!-- 1. INICIO (Para todos) -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="inicio">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Inicio
+            </NavLink>
+        </div>
+
+        <!-- 2. PUNTO DE VENTA (Para todos: Cajeros y Admins) -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="puntodeventa">
+                <span class="bi bi-cart-check-fill-nav-menu" aria-hidden="true"></span> Punto de Venta
+            </NavLink>
+        </div>
+
+        <!-- 3. MENÚ DE ADMINISTRADOR (Solo si es Admin) -->
+        @if (UserSession.EsAdmin)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="productos">
+                    <span class="bi bi-box-seam-fill-nav-menu" aria-hidden="true"></span> Productos
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="categorias">
+                    <span class="bi bi-tags-fill-nav-menu" aria-hidden="true"></span> Categorías
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="proveedores">
+                    <span class="bi bi-truck-nav-menu" aria-hidden="true"></span> Proveedores
+                </NavLink>
+            </div>
+
+            <!-- NUEVO: CLIENTES (Fidelidad) -->
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="clientes">
+                    <span class="bi bi-people-fill-nav-menu" aria-hidden="true"></span> Clientes
+                </NavLink>
+            </div>
+
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="usuarios">
+                    <span class="bi bi-shield-lock-fill-nav-menu" aria-hidden="true"></span> Usuarios y Roles
+                </NavLink>
+            </div>
+        }
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu() => collapseNavMenu = !collapseNavMenu;
+
+    protected override void OnInitialized()
+    {
+        UserSession.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        UserSession.OnChange -= StateHasChanged;
+    }
+}
