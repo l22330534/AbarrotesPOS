@@ -1,46 +1,87 @@
 ﻿@page "/productos"
 @using AbarrotesPOS.Data
+@using AbarrotesPOS.Data.Repositories
 @using AbarrotesPOS.Shared
 @using Microsoft.EntityFrameworkCore
 @inject AppDbContext DbContext
+@inject IProductoRepository ProductoRepo
 @rendermode InteractiveServer
 
 <PageTitle>Productos</PageTitle>
 
 <div class="container">
+
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h1>Administración de Productos</h1>
+        <div>
+            <h1 class="mb-0">Administración de Productos</h1>
+            <p class="text-muted mb-0">Consulta, agrega y edita el catálogo de productos.</p>
+        </div>
         <button class="btn btn-primary" @onclick="AbrirModalParaCrear">
             <i class="bi bi-plus-circle-fill"></i> Nuevo Producto
         </button>
     </div>
 
-    <!-- 1. ALERTA INTELIGENTE: Solo se ve si hay stock bajo -->
+    @* Alerta de stock crítico *@
     @if (conteoBajoStock > 0)
     {
-        <div class="alert alert-warning d-flex align-items-center shadow-sm">
+        <div class="alert alert-warning d-flex align-items-center shadow-sm mb-3">
             <i class="bi bi-exclamation-triangle-fill fs-3 me-3 text-danger"></i>
             <div>
-                <strong>¡Alerta de Inventario!</strong> Tienes <strong>@conteoBajoStock</strong> productos con stock crítico.
+                <strong>¡Alerta de Inventario!</strong>
+                Tienes <strong>@conteoBajoStock</strong> productos con stock crítico.
                 @if (!mostrarSoloBajos)
                 {
-                    <button class="btn btn-link p-0 ms-2 fw-bold" @onclick="FiltrarCriticos">Ver solo urgentes</button>
+                    <button class="btn btn-link p-0 ms-2 fw-bold" @onclick="FiltrarCriticos">
+                        Ver solo urgentes
+                    </button>
                 }
                 else
                 {
-                    <button class="btn btn-link p-0 ms-2" @onclick="CargarDatos">Ver todos</button>
+                    <button class="btn btn-link p-0 ms-2" @onclick="RestablecerFiltro">
+                        Ver todos
+                    </button>
                 }
             </div>
         </div>
     }
 
+    @* Barra de búsqueda *@
+    <div class="input-group mb-3" style="max-width: 420px;">
+        <span class="input-group-text bg-white">
+            <i class="bi bi-search text-muted"></i>
+        </span>
+        <input type="text"
+               class="form-control"
+               placeholder="Buscar por nombre o código de barras..."
+               value="@textoBusqueda"
+               @oninput="OnBusquedaChanged" />
+        @if (!string.IsNullOrEmpty(textoBusqueda))
+        {
+            <button class="btn btn-outline-secondary" @onclick="LimpiarBusqueda">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        }
+    </div>
+
+    @* Tabla *@
     @if (listaProductos == null)
     {
-        <p><em>Cargando productos...</em></p>
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+        </div>
+    }
+    else if (!listaProductos.Any())
+    {
+        <div class="text-center text-muted my-5">
+            <i class="bi bi-box-seam fs-1"></i>
+            <p class="mt-2">No se encontraron productos.</p>
+        </div>
     }
     else
     {
-        <table class="table table-hover align-middle">
+        <table class="table table-hover align-middle shadow-sm">
             <thead class="table-dark">
                 <tr>
                     <th>Nombre</th>
@@ -48,19 +89,17 @@
                     <th>Proveedor</th>
                     <th>Precio Venta</th>
                     <th>Stock</th>
-                    <th>Mínimo</th> <!-- Columna nueva -->
-                    <th>Acciones</th>
+                    <th>Mínimo</th>
+                    <th style="width: 160px;" class="text-center">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var producto in listaProductos)
                 {
-                    // 2. LÓGICA VISUAL: Rojo si está bajo el mínimo
                     bool esCritico = producto.Stock <= producto.StockMinimo;
-
                     <tr class="@(esCritico ? "table-danger" : "")">
                         <td>
-                            <span class="fw-bold">@producto.Nombre</span>
+                            <span class="fw-semibold">@producto.Nombre</span>
                             @if (esCritico)
                             {
                                 <span class="badge bg-danger ms-2">¡Bajo!</span>
@@ -69,101 +108,128 @@
                         <td>@producto.Categoria?.Nombre</td>
                         <td>@producto.Proveedor?.Nombre</td>
                         <td>@producto.PrecioVenta.ToString("C")</td>
-
-                        <!-- Resaltamos el número de stock -->
                         <td class="@(esCritico ? "fw-bold text-danger" : "fw-bold")">
                             @producto.Stock
                         </td>
-
                         <td class="text-muted small">@producto.StockMinimo</td>
-                        <td>
-                            <button class="btn btn-sm btn-warning" @onclick="() => AbrirModalParaEditar(producto)">
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-warning me-1"
+                                    @onclick="() => AbrirModalParaEditar(producto)">
                                 <i class="bi bi-pencil-fill"></i> Editar
                             </button>
-                            <button class="btn btn-sm btn-danger" @onclick="() => EliminarProducto(producto)">
-                                <i class="bi bi-trash3-fill"></i> Eliminar
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => EliminarProducto(producto)">
+                                <i class="bi bi-trash3-fill"></i>
                             </button>
                         </td>
                     </tr>
                 }
             </tbody>
         </table>
+
+        @* Paginación *@
+        @if (totalPaginas > 1)
+        {
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <small class="text-muted">
+                    Página <strong>@paginaActual</strong> de <strong>@totalPaginas</strong>
+                    — @totalRegistros productos
+                </small>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item @(!hayPaginaAnterior ? "disabled" : "")">
+                            <button class="page-link" @onclick="PaginaAnterior">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                        </li>
+                        @for (int i = 1; i <= totalPaginas; i++)
+                        {
+                            var numPagina = i;
+                            <li class="page-item @(numPagina == paginaActual ? "active" : "")">
+                                <button class="page-link" @onclick="() => IrAPagina(numPagina)">
+                                    @numPagina
+                                </button>
+                            </li>
+                        }
+                        <li class="page-item @(!hayPaginaSiguiente ? "disabled" : "")">
+                            <button class="page-link" @onclick="PaginaSiguiente">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        }
     }
+
 </div>
 
-<!-- Modal para Crear/Editar Producto -->
+@* Modal Crear/Editar *@
 @if (mostrarModal)
 {
-    <div class="modal fade show" tabindex="-1" style="display: block; background: rgba(0,0,0,0.5)">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">@(productoActual.Id == 0 ? "Nuevo Producto" : "Editar Producto")</h5>
-                    <button type="button" class="btn-close" @onclick="CerrarModal"></button>
+    <div class="modal fade show" tabindex="-1" style="display: block; background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(productoActual.Id == 0 ? "plus-circle" : "pencil-square") me-2"></i>
+                        @(productoActual.Id == 0 ? "Nuevo Producto" : "Editar Producto")
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModal"></button>
                 </div>
                 <div class="modal-body">
                     <EditForm Model="productoActual" OnValidSubmit="GuardarProducto">
                         <DataAnnotationsValidator />
 
-                        <!-- Fila 1: Nombre y Código -->
                         <div class="row mb-3">
                             <div class="col-md-8">
-                                <label class="form-label">Nombre del Producto</label>
+                                <label class="form-label fw-semibold">Nombre del Producto</label>
                                 <InputText class="form-control" @bind-Value="productoActual.Nombre" />
                                 <ValidationMessage For="() => productoActual.Nombre" />
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Código de Barras</label>
-                                <InputText class="form-control" @bind-Value="productoActual.CodigoBarras" />
+                                <label class="form-label fw-semibold">Código de Barras</label>
+                                <InputText class="form-control font-monospace" @bind-Value="productoActual.CodigoBarras" />
                             </div>
                         </div>
 
-                        <!-- Fila 2: Precios y Stock -->
                         <div class="row mb-3">
                             <div class="col-md-4">
-                                <label class="form-label">Precio de Venta</label>
+                                <label class="form-label fw-semibold">Precio de Venta</label>
                                 <InputNumber class="form-control" @bind-Value="productoActual.PrecioVenta" />
                                 <ValidationMessage For="() => productoActual.PrecioVenta" />
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label">Stock Actual</label>
+                                <label class="form-label fw-semibold">Stock Actual</label>
                                 <InputNumber class="form-control" @bind-Value="productoActual.Stock" />
                                 <ValidationMessage For="() => productoActual.Stock" />
                             </div>
-                            <!-- 3. CAMPO NUEVO EN MODAL -->
                             <div class="col-md-4">
-                                <label class="form-label text-danger fw-bold">Stock Mínimo</label>
+                                <label class="form-label fw-semibold text-danger">Stock Mínimo</label>
                                 <InputNumber class="form-control border-danger" @bind-Value="productoActual.StockMinimo" />
                                 <small class="text-muted">Alerta al bajar de esto.</small>
                             </div>
                         </div>
 
-                        <!-- Fila 3: Relaciones -->
                         <div class="row mb-3">
                             <div class="col-md-6">
-                                <label class="form-label">Categoría</label>
+                                <label class="form-label fw-semibold">Categoría</label>
                                 <InputSelect class="form-select" @bind-Value="productoActual.CategoriaId">
                                     <option value="0">Seleccione...</option>
-                                    @if (listaCategorias != null)
+                                    @foreach (var c in listaCategorias ?? new())
                                     {
-                                        foreach (var c in listaCategorias)
-                                        {
-                                            <option value="@c.Id">@c.Nombre</option>
-                                        }
+                                        <option value="@c.Id">@c.Nombre</option>
                                     }
                                 </InputSelect>
                                 <ValidationMessage For="() => productoActual.CategoriaId" />
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Proveedor</label>
+                                <label class="form-label fw-semibold">Proveedor</label>
                                 <InputSelect class="form-select" @bind-Value="productoActual.ProveedorId">
                                     <option value="0">Seleccione...</option>
-                                    @if (listaProveedores != null)
+                                    @foreach (var p in listaProveedores ?? new())
                                     {
-                                        foreach (var p in listaProveedores)
-                                        {
-                                            <option value="@p.Id">@p.Nombre</option>
-                                        }
+                                        <option value="@p.Id">@p.Nombre</option>
                                     }
                                 </InputSelect>
                                 <ValidationMessage For="() => productoActual.ProveedorId" />
@@ -171,8 +237,12 @@
                         </div>
 
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Guardar</button>
+                            <button type="button" class="btn btn-secondary" @onclick="CerrarModal">
+                                <i class="bi bi-x-circle me-1"></i> Cancelar
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-1"></i> Guardar
+                            </button>
                         </div>
                     </EditForm>
                 </div>
@@ -182,16 +252,29 @@
 }
 
 @code {
+    // ─── Estado de la tabla ──────────────────────────────────────────────────
     private List<Producto>? listaProductos;
     private List<Categoria>? listaCategorias;
     private List<Proveedor>? listaProveedores;
 
+    // ─── Estado del modal ────────────────────────────────────────────────────
     private Producto productoActual = new();
     private bool mostrarModal = false;
 
-    // Variables para la lógica inteligente
-    private int conteoBajoStock = 0;
+    // ─── Paginación ──────────────────────────────────────────────────────────
+    private int paginaActual    = 1;
+    private int totalPaginas    = 1;
+    private int totalRegistros  = 0;
+    private bool hayPaginaAnterior  => paginaActual > 1;
+    private bool hayPaginaSiguiente => paginaActual < totalPaginas;
+    private const int RegistrosPorPagina = 15;
+
+    // ─── Búsqueda ────────────────────────────────────────────────────────────
+    private string textoBusqueda = string.Empty;
+    private int conteoBajoStock  = 0;
     private bool mostrarSoloBajos = false;
+
+    // ─── Ciclo de vida ───────────────────────────────────────────────────────
 
     protected override async Task OnInitializedAsync()
     {
@@ -201,57 +284,98 @@
 
     private async Task CargarCatalogos()
     {
-        listaCategorias = await DbContext.Categorias.OrderBy(c => c.Nombre).ToListAsync();
+        listaCategorias  = await DbContext.Categorias.OrderBy(c => c.Nombre).ToListAsync();
         listaProveedores = await DbContext.Proveedores.OrderBy(p => p.Nombre).ToListAsync();
     }
 
     private async Task CargarDatos()
     {
         mostrarSoloBajos = false;
-        listaProductos = await DbContext.Productos
-            .Include(p => p.Categoria)
-            .Include(p => p.Proveedor)
-            .OrderBy(p => p.Nombre)
-            .ToListAsync();
 
-        // Calcular alertas
-        conteoBajoStock = listaProductos.Count(p => p.Stock <= p.StockMinimo);
+        var resultado = await ProductoRepo.GetProductosPaginados(
+            paginaActual, RegistrosPorPagina, textoBusqueda);
+
+        listaProductos  = resultado.Items;
+        totalPaginas    = resultado.TotalPaginas;
+        totalRegistros  = resultado.TotalRegistros;
+
+        // El conteo de críticos siempre refleja el total real, no solo la página
+        var bajoStock   = await ProductoRepo.GetBajoStockAsync();
+        conteoBajoStock = bajoStock.Count;
+    }
+
+    // ─── Búsqueda ────────────────────────────────────────────────────────────
+
+    private async Task OnBusquedaChanged(ChangeEventArgs e)
+    {
+        textoBusqueda = e.Value?.ToString() ?? string.Empty;
+        paginaActual  = 1; // Volver a la primera página al buscar
+        await CargarDatos();
+    }
+
+    private async Task LimpiarBusqueda()
+    {
+        textoBusqueda = string.Empty;
+        paginaActual  = 1;
+        await CargarDatos();
     }
 
     private void FiltrarCriticos()
     {
         if (listaProductos == null) return;
-        listaProductos = listaProductos.Where(p => p.Stock <= p.StockMinimo).ToList();
+        listaProductos  = listaProductos.Where(p => p.Stock <= p.StockMinimo).ToList();
         mostrarSoloBajos = true;
     }
 
+    private async Task RestablecerFiltro()
+    {
+        paginaActual = 1;
+        await CargarDatos();
+    }
+
+    // ─── Paginación ──────────────────────────────────────────────────────────
+
+    private async Task IrAPagina(int pagina)
+    {
+        paginaActual = pagina;
+        await CargarDatos();
+    }
+
+    private async Task PaginaAnterior()
+    {
+        if (hayPaginaAnterior) await IrAPagina(paginaActual - 1);
+    }
+
+    private async Task PaginaSiguiente()
+    {
+        if (hayPaginaSiguiente) await IrAPagina(paginaActual + 1);
+    }
+
+    // ─── CRUD ────────────────────────────────────────────────────────────────
+
     private void AbrirModalParaCrear()
     {
-        productoActual = new Producto { StockMinimo = 5 }; // Valor sugerido
-        mostrarModal = true;
+        productoActual = new Producto { StockMinimo = 5 };
+        mostrarModal   = true;
     }
 
     private void AbrirModalParaEditar(Producto producto)
     {
-        // Clonamos incluyendo el StockMinimo
         productoActual = new Producto
         {
-            Id = producto.Id,
-            Nombre = producto.Nombre,
+            Id           = producto.Id,
+            Nombre       = producto.Nombre,
             CodigoBarras = producto.CodigoBarras,
-            PrecioVenta = producto.PrecioVenta,
-            Stock = producto.Stock,
-            StockMinimo = producto.StockMinimo, // <--- Importante copiar esto
-            CategoriaId = producto.CategoriaId,
-            ProveedorId = producto.ProveedorId
+            PrecioVenta  = producto.PrecioVenta,
+            Stock        = producto.Stock,
+            StockMinimo  = producto.StockMinimo,
+            CategoriaId  = producto.CategoriaId,
+            ProveedorId  = producto.ProveedorId
         };
         mostrarModal = true;
     }
 
-    private void CerrarModal()
-    {
-        mostrarModal = false;
-    }
+    private void CerrarModal() => mostrarModal = false;
 
     private async Task GuardarProducto()
     {
@@ -266,13 +390,13 @@
             var db = await DbContext.Productos.FindAsync(productoActual.Id);
             if (db != null)
             {
-                db.Nombre = productoActual.Nombre;
+                db.Nombre       = productoActual.Nombre;
                 db.CodigoBarras = productoActual.CodigoBarras;
-                db.PrecioVenta = productoActual.PrecioVenta;
-                db.Stock = productoActual.Stock;
-                db.StockMinimo = productoActual.StockMinimo; // Actualizamos
-                db.CategoriaId = productoActual.CategoriaId;
-                db.ProveedorId = productoActual.ProveedorId;
+                db.PrecioVenta  = productoActual.PrecioVenta;
+                db.Stock        = productoActual.Stock;
+                db.StockMinimo  = productoActual.StockMinimo;
+                db.CategoriaId  = productoActual.CategoriaId;
+                db.ProveedorId  = productoActual.ProveedorId;
             }
         }
 

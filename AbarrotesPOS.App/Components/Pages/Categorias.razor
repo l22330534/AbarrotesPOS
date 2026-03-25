@@ -1,151 +1,127 @@
 ﻿@page "/categorias"
 @using AbarrotesPOS.Data
 @using AbarrotesPOS.Shared
-@using Microsoft.EntityFrameworkCore @* <-- ¡ESTA ES LA LÍNEA QUE SOLUCIONA EL ERROR! *@
-@inject AppDbContext DbContext
+@using AbarrotesPOS.App.Components.Base
+@using Microsoft.EntityFrameworkCore
 @rendermode InteractiveServer
+@inherits CrudBaseComponent<Categoria>
 
 <PageTitle>Categorías</PageTitle>
 
-<h1>Administración de Categorías</h1>
-<p>Aquí puedes ver, agregar, editar y eliminar las categorías de productos.</p>
+<div class="container">
 
-<button class="btn btn-primary mb-3" @onclick="AbrirModalParaCrear">
-    <i class="bi bi-plus-circle-fill"></i> Nueva Categoría
-</button>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="mb-0">Administración de Categorías</h1>
+            <p class="text-muted mb-0">Aquí puedes ver, agregar, editar y eliminar las categorías de productos.</p>
+        </div>
+        <button class="btn btn-primary" @onclick="AbrirModalParaCrear">
+            <i class="bi bi-plus-circle-fill"></i> Nueva Categoría
+        </button>
+    </div>
 
-@if (listaCategorias == null)
-{
-    <p><em>Cargando categorías...</em></p>
-}
-else
-{
-    <table class="table table-striped table-hover">
-        <thead class="table-dark">
-            <tr>
-                <th>ID</th>
-                <th>Nombre</th>
-                <th>Acciones</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var categoria in listaCategorias)
-            {
+    @if (!string.IsNullOrEmpty(mensajeError))
+    {
+        <div class="alert alert-danger alert-dismissible shadow-sm">
+            <i class="bi bi-exclamation-circle-fill me-2"></i>@mensajeError
+            <button type="button" class="btn-close" @onclick="() => mensajeError = string.Empty"></button>
+        </div>
+    }
+
+    @if (listaEntidades == null)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando...</span>
+            </div>
+        </div>
+    }
+    else if (!listaEntidades.Any())
+    {
+        <div class="text-center text-muted my-5">
+            <i class="bi bi-tag fs-1"></i>
+            <p class="mt-2">No hay categorías registradas. ¡Crea la primera!</p>
+        </div>
+    }
+    else
+    {
+        <table class="table table-striped table-hover align-middle shadow-sm">
+            <thead class="table-dark">
                 <tr>
-                    <td>@categoria.Id</td>
-                    <td>@categoria.Nombre</td>
-                    <td>
-                        <button class="btn btn-sm btn-warning" @onclick="() => AbrirModalParaEditar(categoria)">
-                            <i class="bi bi-pencil-fill"></i> Editar
-                        </button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => EliminarCategoria(categoria)">
-                            <i class="bi bi-trash3-fill"></i> Eliminar
-                        </button>
-                    </td>
+                    <th style="width: 80px;">ID</th>
+                    <th>Nombre</th>
+                    <th style="width: 160px;" class="text-center">Acciones</th>
                 </tr>
-            }
-        </tbody>
-    </table>
-}
+            </thead>
+            <tbody>
+                @foreach (var categoria in listaEntidades)
+                {
+                    <tr>
+                        <td class="text-muted small">#@categoria.Id</td>
+                        <td class="fw-semibold">@categoria.Nombre</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-warning me-1"
+                                    @onclick="() => AbrirModalParaEditar(categoria)">
+                                <i class="bi bi-pencil-fill"></i> Editar
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => Eliminar(categoria)">
+                                <i class="bi bi-trash3-fill"></i>
+                            </button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
 
-<!-- Modal para Crear/Editar Categoría -->
+</div>
+
 @if (mostrarModal)
 {
-    <div class="modal fade show" tabindex="-1" style="display: block;">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">@(categoriaActual.Id == 0 ? "Nueva Categoría" : "Editar Categoría")</h5>
-                    <button type="button" class="btn-close" @onclick="CerrarModal"></button>
+    <div class="modal fade show" tabindex="-1" style="display: block; background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-@(entidadActual.Id == 0 ? "plus-circle" : "pencil-square") me-2"></i>
+                        @(entidadActual.Id == 0 ? "Nueva Categoría" : "Editar Categoría")
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModal"></button>
                 </div>
-                <div class="modal-body">
-                    <EditForm Model="categoriaActual" OnValidSubmit="GuardarCategoria">
-                        <DataAnnotationsValidator />
+                <EditForm Model="entidadActual" OnValidSubmit="Guardar">
+                    <DataAnnotationsValidator />
+                    <div class="modal-body">
+                        @if (!string.IsNullOrEmpty(mensajeError))
+                        {
+                            <div class="alert alert-danger">@mensajeError</div>
+                        }
                         <div class="mb-3">
-                            <label for="nombre" class="form-label">Nombre de la Categoría</label>
-                            <InputText id="nombre" class="form-control" @bind-Value="categoriaActual.Nombre" />
-                            <ValidationMessage For="() => categoriaActual.Nombre" />
+                            <label class="form-label fw-semibold">Nombre de la Categoría</label>
+                            <InputText class="form-control" @bind-Value="entidadActual.Nombre"
+                                       placeholder="Ej: Lácteos, Bebidas, Limpieza..." />
+                            <ValidationMessage For="() => entidadActual.Nombre" />
                         </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Guardar</button>
-                        </div>
-                    </EditForm>
-                </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CerrarModal">
+                            <i class="bi bi-x-circle me-1"></i> Cancelar
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-1"></i> Guardar
+                        </button>
+                    </div>
+                </EditForm>
             </div>
         </div>
     </div>
     <div class="modal-backdrop fade show"></div>
 }
 
-
 @code {
-    private List<Categoria>? listaCategorias;
-    private Categoria categoriaActual = new();
-    private bool mostrarModal = false;
-
-    protected override async Task OnInitializedAsync()
+    protected override Categoria CloneEntidad(Categoria original) => new()
     {
-        await CargarCategorias();
-    }
-
-    private async Task CargarCategorias()
-    {
-        listaCategorias = await DbContext.Categorias.OrderBy(c => c.Nombre).ToListAsync();
-    }
-
-    private void AbrirModalParaCrear()
-    {
-        categoriaActual = new Categoria();
-        mostrarModal = true;
-    }
-
-    private void AbrirModalParaEditar(Categoria categoria)
-    {
-        // Clonamos el objeto para no modificar la lista directamente hasta guardar
-        categoriaActual = new Categoria { Id = categoria.Id, Nombre = categoria.Nombre };
-        mostrarModal = true;
-    }
-
-    private void CerrarModal()
-    {
-        mostrarModal = false;
-    }
-
-    private async Task GuardarCategoria()
-    {
-        if (string.IsNullOrWhiteSpace(categoriaActual.Nombre))
-        {
-            // Opcional: Podrías mostrar un mensaje de error al usuario aquí
-            return;
-        }
-
-        if (categoriaActual.Id == 0)
-        {
-            // Es una nueva categoría
-            DbContext.Categorias.Add(categoriaActual);
-        }
-        else
-        {
-            // Es una categoría existente
-            var categoriaEnDb = await DbContext.Categorias.FindAsync(categoriaActual.Id);
-            if (categoriaEnDb != null)
-            {
-                categoriaEnDb.Nombre = categoriaActual.Nombre;
-            }
-        }
-
-        await DbContext.SaveChangesAsync();
-        await CargarCategorias();
-        CerrarModal();
-    }
-
-    private async Task EliminarCategoria(Categoria categoria)
-    {
-        // Aquí podrías agregar una confirmación si lo deseas
-        DbContext.Categorias.Remove(categoria);
-        await DbContext.SaveChangesAsync();
-        await CargarCategorias();
-    }
+        Id = original.Id,
+        Nombre = original.Nombre
+    };
 }
-

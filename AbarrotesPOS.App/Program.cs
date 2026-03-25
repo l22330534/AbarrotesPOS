@@ -1,30 +1,29 @@
 using AbarrotesPOS.App.Components;
 using AbarrotesPOS.Data;
-using AbarrotesPOS.Services; // <--- 1. IMPORTANTE: Agregar este using
+using AbarrotesPOS.Data.Repositories;
+using AbarrotesPOS.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Configuración de la Base de Datos
-// (Le agregué lo de MigrationsAssembly por si acaso vuelves a tener problemas con las migraciones)
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         b => b.MigrationsAssembly("AbarrotesPOS.Data")
     ));
 
-// --- 2. IMPORTANTE: REGISTRAR EL SERVICIO DE SESIÓN ---
-// Esto permite que la app "recuerde" quién se logueó
 builder.Services.AddScoped<UserSessionService>();
-// -----------------------------------------------------
+
+// ?? Nuevos servicios ??????????????????????????????????????????
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IProductoRepository, ProductoRepository>();
+// ?????????????????????????????????????????????????????????????
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -32,7 +31,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseStaticFiles();
 app.UseAntiforgery();
 
